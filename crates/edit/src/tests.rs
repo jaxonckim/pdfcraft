@@ -1086,6 +1086,28 @@ fn cyrillic_in_a_serif_line_falls_back_to_a_face_that_has_it() {
     }
 }
 
+/// Simplified characters the Japanese faces lack (这, 们, 欢) take the Chinese face.
+#[test]
+fn simplified_chinese_replacement_uses_the_chinese_face() {
+    let Some(face) = pdfcraft_fonts::ui_chinese_fonts().into_iter().next() else {
+        eprintln!("skipping simplified_chinese_replacement_uses_the_chinese_face: no Chinese face (set CRAFT_FONTS_DIR)");
+        return;
+    };
+    let expected = format!("{}-{}", face.family, face.style).replace(' ', "");
+    let replacement = "这是我们的中文说明，欢迎使用";
+    for paragraph in [false, true] {
+        let mut doc = text_page("BT /F2 12 Tf 72 700 Td (ab) Tj ET");
+        if paragraph {
+            text::replace_block(&mut doc, 0, 0, replacement).unwrap();
+        } else {
+            text::replace_line(&mut doc, 0, 0, replacement).unwrap();
+        }
+        let lines = text::text_lines(&reopen(&doc), 0).unwrap();
+        assert_eq!(lines[0].text, replacement);
+        assert_eq!(lines[0].base_font, expected);
+    }
+}
+
 #[test]
 fn japanese_paragraph_uses_unicode_type3_fallback() {
     if without_craft_fonts("japanese_paragraph_uses_unicode_type3_fallback") {
@@ -1162,7 +1184,8 @@ fn japanese_replacement_missing_a_glyph_after_240_changes_nothing() {
         return;
     }
     // The first CJK character that no face draws: the 242nd unique character, in a second font.
-    let faces = pdfcraft_fonts::document_japanese_fonts_for_style(false, false);
+    let mut faces = pdfcraft_fonts::document_japanese_fonts_for_style(false, false);
+    faces.extend(pdfcraft_fonts::ui_chinese_fonts());
     let missing = (0x4E00u32..0x9FFF)
         .filter_map(char::from_u32)
         .find(|ch| faces.iter().all(|face| pdfcraft_fonts::japanese_glyph_from(face, *ch).is_err()))

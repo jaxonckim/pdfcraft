@@ -47,17 +47,10 @@ pub fn names(bytes: &[u8]) -> Result<(String, String), String> {
 /// never turn a proprietary system-interface fallback into an exported PDF font.
 pub fn validate_document_input(bytes: &[u8]) -> Result<(), String> {
     use skrifa::string::StringId;
-    let (family, _) = names(bytes)?;
-    let key = face_key(&family);
-    if ["sourcehan", "sourceserif", "sourcesans", "notosanscjk", "notoserifcjk"].iter().any(|n| key.starts_with(n)) {
-        return Err("this font family is excluded by the project's asset policy".into());
-    }
+    // This fork allows the openly licensed Adobe CJK families (Source Han, Noto CJK); the licence
+    // check below still keeps proprietary faces out.
+    names(bytes)?;
     let f = FontRef::new(bytes).map_err(|e| e.to_string())?;
-    let attribution: String =
-        [StringId::COPYRIGHT_NOTICE, StringId::MANUFACTURER].into_iter().flat_map(|id| f.localized_strings(id)).map(|s| s.to_string()).collect();
-    if attribution.to_ascii_lowercase().contains("adobe") {
-        return Err("Adobe-authored font assets are excluded by the project's asset policy".into());
-    }
     let license: String = f.localized_strings(StringId::LICENSE_DESCRIPTION).map(|s| s.to_string()).collect();
     if !["SIL OPEN FONT", "SIL Open Font", "Apache License", "Ubuntu Font Licence", "Bitstream Vera", "MIT License"]
         .iter()
