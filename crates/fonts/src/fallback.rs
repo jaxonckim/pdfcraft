@@ -156,9 +156,11 @@ impl Substitution {
 fn script_for(ordering: &str) -> Option<&'static str> {
     match ordering {
         "Japan1" => Some("Jpan"),
-        // Registered orderings we have no openly licensed face for. AGENTS.md 1.1 rules out
-        // Source Han and Noto CJK (Source Han rebranded), which is why these have none.
-        "GB1" | "CNS1" | "Korea1" | "KR" => Some(""),
+        // The Chinese face (Noto Sans CJK SC) also covers Traditional Chinese and Hangul, and the
+        // renderer stands it in for these collections (`crates/render/src/raster.rs`).
+        "GB1" | "CNS1" | "Korea1" => Some("Hans"),
+        // A registered ordering the renderer has no substitute for.
+        "KR" => Some(""),
         _ => None,
     }
 }
@@ -292,15 +294,33 @@ mod tests {
 
     #[test]
     fn a_script_with_no_licensed_face_reports_none_rather_than_latin() {
-        // The user's Chinese PDF draws nothing. The point of this is that we can now say so,
-        // instead of quietly standing Helvetica in and showing the wrong glyphs.
-        for ordering in ["GB1", "CNS1", "Korea1", "KR"] {
+        // A PDF in a script we have no face for draws nothing. The point of this is that we can
+        // say so, instead of quietly standing Helvetica in and showing the wrong glyphs.
+        let mut orderings = vec!["KR"];
+        if !crate::CRAFT_FONTS.iter().any(|f| f.covers("Hans")) {
+            orderings.extend(["GB1", "CNS1", "Korea1"]);
+        }
+        for ordering in orderings {
             let s = substitute(&req("SomeCJKFont", false, 0, Some(ordering)));
             assert_eq!(s.face, Face::None, "{ordering}");
             assert_eq!(s.why, Why::NoFaceForScript, "{ordering}");
             assert_eq!(s.face_name(), None);
             assert!(!s.why.is_faithful());
             assert!(s.why.note().contains("no licensed face"), "{ordering}");
+        }
+    }
+
+    #[test]
+    fn chinese_and_korean_take_the_chinese_face_with_craft_fonts() {
+        let has_hans = crate::CRAFT_FONTS.iter().any(|f| f.covers("Hans"));
+        for ordering in ["GB1", "CNS1", "Korea1"] {
+            let s = substitute(&req("STSong-Light", false, 0, Some(ordering)));
+            if has_hans {
+                assert_eq!(s.why, Why::ScriptFace, "{ordering}");
+                assert!(matches!(s.face, Face::Craft(f) if f.covers("Hans")), "{ordering}");
+            } else {
+                assert_eq!(s.face, Face::None, "{ordering}");
+            }
         }
     }
 

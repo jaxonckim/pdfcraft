@@ -2969,13 +2969,22 @@ trailer << /Size 13 /Root 1 0 R >>
     fn doc_info_says_which_face_stands_in_and_why() {
         let info = inspect(Arc::new(NOT_EMBEDDED.to_vec()), None).expect("opens");
 
-        // The one that matters most to a user: a Chinese PDF that draws nothing. Before this,
-        // doc_info said only `embedded: false` and left them to guess.
+        // The one that matters most to a user: a Chinese PDF. Before this, doc_info said only
+        // `embedded: false` and left them to guess. With craft-fonts' Chinese face it stands in;
+        // without it nothing does, and that is said.
         let cjk = font(&info.fonts, "STSong-Light");
         assert!(!cjk.embedded);
-        assert_eq!(cjk.substitute, None, "no licensed Chinese face, so nothing stands in");
         let why = cjk.substitution.as_deref().unwrap_or_default();
-        assert!(why.contains("no licensed face") && why.contains("rather than the wrong glyphs"), "{why}");
+        match pdfcraft_fonts::ui_chinese_fonts().first() {
+            Some(face) => {
+                assert_eq!(cjk.substitute, Some(face.name()), "the Chinese face stands in");
+                assert!(why.contains("script the font declares"), "{why}");
+            }
+            None => {
+                assert_eq!(cjk.substitute, None, "no licensed Chinese face, so nothing stands in");
+                assert!(why.contains("no licensed face") && why.contains("rather than the wrong glyphs"), "{why}");
+            }
+        }
 
         // An aliased standard-14 name resolves to the real face, whose metrics are exact.
         let arial = font(&info.fonts, "ArialMT");
