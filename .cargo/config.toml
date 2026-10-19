@@ -1,2 +1,8 @@
 [alias]
 xtask = "run -p xtask --"
+
+# The craft-fonts checkout next to this repository (../craft-fonts), embedded by
+# crates/fonts/build.rs so Japanese and Chinese text can be shown and written into PDFs.
+# A CRAFT_FONTS_DIR set in the environment takes precedence.
+[env]
+CRAFT_FONTS_DIR = { value = "../craft-fonts", relative = true }

@@ -1494,9 +1494,12 @@ fn no_hebrew_font() -> EditError {
 
 /// The faces a Type 3 replacement may draw `text` with, best first. Text with Hebrew takes the
 /// Hebrew face first (its Latin and digits too, so a line keeps one look), then the Japanese
-/// faces for anything it lacks; other text takes the Japanese faces, as before.
+/// faces for anything it lacks; other text takes the Japanese faces, as before. The Chinese
+/// (`Hans`) faces follow the Japanese ones, so text with Simplified characters the Japanese faces
+/// lack (这, 们, 欢) is drawn in a Chinese face.
 fn type3_faces(text: &str, family: crate::added::Family, bold: bool) -> Result<(Vec<&'static CraftFont>, bool), EditError> {
-    let japanese = pdfcraft_fonts::document_japanese_fonts_for_style(family == crate::added::Family::Times, bold);
+    let mut japanese = pdfcraft_fonts::document_japanese_fonts_for_style(family == crate::added::Family::Times, bold);
+    japanese.extend(pdfcraft_fonts::ui_chinese_fonts());
     if !text.chars().any(crate::bidi::is_hebrew) {
         return Ok((japanese, false));
     }

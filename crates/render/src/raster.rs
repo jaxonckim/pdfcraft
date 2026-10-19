@@ -73,20 +73,26 @@ impl RenderConfig {
         InterpreterSettings {
             ocg_overrides: self.layers.clone(),
             hide_comments: self.hide_comments,
-            font_resolver: Arc::new(move |query| japanese_fallback(query).or_else(|| standard(query))),
+            font_resolver: Arc::new(move |query| cjk_fallback(query).or_else(|| standard(query))),
             ..InterpreterSettings::default()
         }
     }
 }
 
-/// A Japanese face from craft-fonts for a CID font of the Adobe-Japan1 collection that the PDF
-/// doesn't embed (`HeiseiMin-W3`, `KozGoPro-Medium`, …). hayro's own substitutes for fonts that
-/// aren't embedded are the Latin standard 14, so such text drew nothing. `None` for every other
-/// font, and when PdfCraft was built without craft-fonts. Only Japanese: the pinned craft-fonts
-/// has no other CJK faces, and its later Chinese face is Noto CJK, which AGENTS.md §1.1 rules out.
-fn japanese_fallback(query: &FontQuery) -> Option<(FontData, u32)> {
+/// A craft-fonts face for a CID font of an Adobe CJK collection that the PDF doesn't embed:
+/// Japanese for Adobe-Japan1 (`HeiseiMin-W3`, `KozGoPro-Medium`, …), the Chinese face (Noto Sans
+/// CJK SC, which also covers Traditional Chinese and Hangul) for Adobe-GB1, -CNS1 and -Korea1
+/// (`STSong-Light`, `MSung-Light`, `HYSMyeongJo-Medium`, …). hayro's own substitutes for fonts
+/// that aren't embedded are the Latin standard 14, so such text drew nothing. `None` for every
+/// other font, and when PdfCraft was built without craft-fonts.
+fn cjk_fallback(query: &FontQuery) -> Option<(FontData, u32)> {
     let FontQuery::Fallback(f) = query else { return None };
-    if f.character_collection.as_ref()?.family != CidFamily::AdobeJapan1 {
+    let family = &f.character_collection.as_ref()?.family;
+    if matches!(family, CidFamily::AdobeGB1 | CidFamily::AdobeCNS1 | CidFamily::AdobeKorea1) {
+        let face = pdfcraft_fonts::ui_chinese_fonts().into_iter().next()?;
+        return Some((Arc::new(face.bytes), 0));
+    }
+    if *family != CidFamily::AdobeJapan1 {
         return None;
     }
     let face = match japanese_face(f.post_script_name.as_deref().unwrap_or_default(), f.is_serif, f.is_bold || f.font_weight >= 600) {
@@ -6448,6 +6454,39 @@ trailer << /Root 1 0 R >>
         }
     }
 
+    /// A Chinese PDF that names `STSong-Light` (Adobe-GB1) without embedding it draws in the
+    /// Chinese craft-fonts face, Simplified-only characters included.
+    #[test]
+    fn non_embedded_chinese_cid_fonts_draw_with_the_chinese_face() {
+        // 这们: absent from the Japanese faces.
+        let content = "BT /F1 40 Tf 5 15 Td <8FD94EEC> Tj ET";
+        let pdf = format!(
+            "%PDF-1.7
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 100 60] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+4 0 obj << /Length {} >> stream
+{content}
+endstream endobj
+5 0 obj << /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [6 0 R] >> endobj
+6 0 obj << /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >>
+  /FontDescriptor 7 0 R /DW 1000 >> endobj
+7 0 obj << /Type /FontDescriptor /FontName /STSong-Light /Flags 6 /FontBBox [0 -141 1000 859] /ItalicAngle 0 /Ascent 859 /Descent -141 /CapHeight 700 /StemV 80 >> endobj
+trailer << /Root 1 0 R >>
+%%EOF",
+            content.len()
+        );
+        if pdfcraft_fonts::ui_chinese_fonts().is_empty() {
+            eprintln!("built without craft-fonts (CRAFT_FONTS_DIR unset): no Chinese face to check");
+            return;
+        }
+        let mut r = PageRenderer::new(Arc::new(pdf.into_bytes()), RenderConfig::default());
+        let p = r.render(RenderRequest { page: 0, kind: RequestKind::Pixels, tile: None, scale: 1.0, tag: 0, ..Default::default() });
+        assert!(p.error.is_none(), "{:?}", p.error);
+        let inked = p.rgba.as_chunks::<4>().0.iter().filter(|c| c[0] < 128).count();
+        assert!(inked > 300, "这们 is drawn ({inked} dark pixels)");
+    }
+
     /// Half-width katakana are common in Japanese documents set in a non-embedded Mincho font
     /// such as HeiseiMin-W3. The Mincho substitute must have those glyphs: one that lacks them
     /// (Shippori Mincho) draws them as .notdef.
@@ -6461,7 +6500,7 @@ trailer << /Root 1 0 R >>
             character_collection: Some(CharacterCollection { family: CidFamily::AdobeJapan1, supplement: 2 }),
             ..FallbackFontQuery::default()
         });
-        let Some((data, index)) = super::japanese_fallback(&query) else {
+        let Some((data, index)) = super::cjk_fallback(&query) else {
             eprintln!("built without craft-fonts (CRAFT_FONTS_DIR unset): no Japanese face to check");
             return;
         };

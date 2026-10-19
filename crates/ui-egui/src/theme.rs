@@ -189,7 +189,7 @@ pub fn install_fonts(ctx: &egui::Context) {
 /// The interface language's claim on the CJK fallback faces.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CjkPreference {
-    /// Japanese faces first (every non-Chinese language).
+    /// Japanese faces first (the Japanese interface).
     #[default]
     Default,
     SimplifiedChinese,
@@ -197,12 +197,14 @@ pub enum CjkPreference {
 }
 
 impl CjkPreference {
-    /// The preference for a UI language code (`zh-hans`, `zh-hant`, anything else).
+    /// The preference for a UI language code (`ja`, `zh-hant`, anything else). This fork puts
+    /// Simplified Chinese first for every language but Japanese and Traditional Chinese, so a
+    /// Chinese file name in, say, the English interface draws in one face on one baseline.
     pub fn for_language(code: &str) -> Self {
         match code {
-            "zh-hans" => Self::SimplifiedChinese,
+            "ja" => Self::Default,
             "zh-hant" => Self::TraditionalChinese,
-            _ => Self::Default,
+            _ => Self::SimplifiedChinese,
         }
     }
 }
