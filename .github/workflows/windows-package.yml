@@ -1,0 +1,62 @@
+# Builds the Windows installer (.msi) and portable zip only, unsigned, with craft-fonts embedded.
+# The full Release workflow also builds macOS (on a paid larger runner) and FreeBSD (hours under
+# emulation); this one runs on the free windows-latest runner alone. The packages are the run's
+# artifact "windows-<arch>".
+name: Windows package
+
+on:
+  push:
+    branches: [windows-build]
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "x64, x86 or arm64"
+        type: choice
+        options: [x64, x86, arm64]
+        default: x64
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows ${{ inputs.arch || 'x64' }}
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      ARCH: ${{ inputs.arch || 'x64' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The same craft-fonts revision release.yml pins (it has Noto Sans CJK SC).
+      - name: Check out craft-fonts
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
+        with:
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+          targets: ${{ env.ARCH == 'x86' && 'i686-pc-windows-msvc' || env.ARCH == 'arm64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: windows-package-${{ env.ARCH }}
+      - name: Install WiX
+        uses: storytold/craft-common-actions/actions/install-wix@main
+        with:
+          wix-version: "5.0.2"
+      - name: Build and package (unsigned)
+        shell: pwsh
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: ./packaging/windows/package.ps1 -Arch $env:ARCH
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-${{ env.ARCH }}
+          path: dist/release/*
+          if-no-files-found: error
